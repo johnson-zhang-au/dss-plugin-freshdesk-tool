@@ -23,21 +23,16 @@ class FreshdeskTool(BaseAgentTool):
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["create_ticket", "get_tickets", "close_ticket", "update_ticket_priority"],
-                        "description": "The action to perform (create_ticket, get_tickets, close_ticket, or update_ticket_priority)"
+                        "enum": ["create_ticket", "get_ticket_by_id", "get_tickets_by_email", "close_ticket", "update_ticket_priority"],
+                        "description": "The action to perform (create_ticket, get_ticket_by_id, get_tickets_by_email, close_ticket, or update_ticket_priority)"
                     },
                     "ticket_id": {
                         "type": "integer",
-                        "description": "Ticket ID (required for get_tickets when search_by is 'id', close_ticket, or update_ticket_priority)"
-                    },
-                    "search_by": {
-                        "type": "string",
-                        "enum": ["id", "requester_email"],
-                        "description": "Search criteria for get_tickets action (id or requester email)"
+                        "description": "Ticket ID (required for get_ticket_by_id, close_ticket, or update_ticket_priority)"
                     },
                     "requester_email": {
                         "type": "string",
-                        "description": "Requester's email address (required when search_by is 'requester_email', close_ticket, or update_ticket_priority)"
+                        "description": "Requester's email address (required for get_ticket_by_id, get_tickets_by_email, close_ticket, or update_ticket_priority)"
                     },
                     "subject": {
                         "type": "string",
@@ -174,75 +169,69 @@ class FreshdeskTool(BaseAgentTool):
                 }]
             }
             
-        elif action == "get_tickets":
-            if "search_by" not in args:
-                raise ValueError("Missing required field: search_by")
-                
-            search_by = args["search_by"]
+        elif action == "get_ticket_by_id":
+            # Validate required fields
+            required_fields = ["ticket_id", "requester_email"]
+            for field in required_fields:
+                if field not in args:
+                    raise ValueError(f"Missing required field: {field}")
+                    
+            # Include requester details in the request
+            result = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
             
-            if search_by == "id":
-                if "ticket_id" not in args:
-                    raise ValueError("Missing required field: ticket_id")
-                if "requester_email" not in args:
-                    raise ValueError("Missing required field: requester_email")
-                    
-                # Include requester details in the request
-                result = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
-                
-                # Verify that the provided email matches the ticket's requester email
-                if result.get("requester", {}).get("email") != args["requester_email"]:
-                    raise ValueError("The provided requester email does not match the ticket's requester email")
-                
-                return {
-                    "output": {
-                        "message": "Ticket retrieved successfully",
-                        "ticket_id": result["id"],
-                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
-                        "ticket": result
-                    },
-                    "sources": [{
-                        "toolCallDescription": f"Retrieved Freshdesk ticket #{args['ticket_id']}",
-                        "items": [{
-                            "type": "SIMPLE_DOCUMENT",
-                            "title": f"Ticket #{result['id']}",
-                            "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
-                        }]
-                    }]
-                }
-                
-            elif search_by == "requester_email":
-                if "requester_email" not in args:
-                    raise ValueError("Missing required field: requester_email")
-                    
-                # List all tickets filtered by requester email
-                result = self._make_request("GET", "tickets", params={"email": args["requester_email"]})
-                
-                # Add URLs to each ticket
-                for ticket in result:
-                    ticket["url"] = f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
-                
-                # Create items for sources
-                items = []
-                for ticket in result:
-                    items.append({
+            # Verify that the provided email matches the ticket's requester email
+            if result.get("requester", {}).get("email") != args["requester_email"]:
+                raise ValueError("The provided requester email does not match the ticket's requester email")
+            
+            return {
+                "output": {
+                    "message": "Ticket retrieved successfully",
+                    "ticket_id": result["id"],
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
+                    "ticket": result
+                },
+                "sources": [{
+                    "toolCallDescription": f"Retrieved Freshdesk ticket #{args['ticket_id']}",
+                    "items": [{
                         "type": "SIMPLE_DOCUMENT",
-                        "title": f"Ticket #{ticket['id']}",
-                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
-                    })
-                
-                return {
-                    "output": {
-                        "message": f"Found {len(result)} tickets for requester {args['requester_email']}",
-                        "tickets": result
-                    },
-                    "sources": [{
-                        "toolCallDescription": f"Retrieved Freshdesk tickets for requester: {args['requester_email']}",
-                        "items": items
+                        "title": f"Ticket #{result['id']}",
+                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
                     }]
-                }
+                }]
+            }
+            
+        elif action == "get_tickets_by_email":
+            # Validate required fields
+            required_fields = ["requester_email"]
+            if "requester_email" not in args:
+                raise ValueError("Missing required field: requester_email")
                 
-            else:
-                raise ValueError(f"Invalid search_by value: {search_by}")
+            # List all tickets filtered by requester email
+            result = self._make_request("GET", "tickets", params={"email": args["requester_email"]})
+            
+            # Add URLs to each ticket
+            for ticket in result:
+                ticket["url"] = f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+            
+            # Create items for sources
+            items = []
+            for ticket in result:
+                items.append({
+                    "type": "SIMPLE_DOCUMENT",
+                    "title": f"Ticket #{ticket['id']}",
+                    "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+                })
+            
+            return {
+                "output": {
+                    "message": f"Found {len(result)} tickets for requester {args['requester_email']}",
+                    "tickets": result
+                },
+                "sources": [{
+                    "toolCallDescription": f"Retrieved Freshdesk tickets for requester: {args['requester_email']}",
+                    "items": items
+                }]
+            }
             
         elif action == "close_ticket":
             # Validate required fields
