@@ -21,6 +21,13 @@
             "type": "PASSWORD",
             "mandatory": true,
             "description": "API Key for Freshdesk"
+        },
+        {
+            "name": "ticket_types",
+            "label": "Ticket Types",
+            "type": "STRINGS",
+            "mandatory": true,
+            "description": "A list of allowed ticket types"
         }
     ]
 }

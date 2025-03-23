@@ -10,6 +10,7 @@ class FreshdeskTool(BaseAgentTool):
         self.config = config
         self.api_key = self.config["freshdesk_api_connection"]["apiKey"]
         self.domain = self.config["freshdesk_api_connection"]["freshdesk_domain"]
+        self.ticket_types = self.config["freshdesk_api_connection"]["ticket_types"]
         self.base_url = f"https://{self.domain}/api/v2"
 
     def get_descriptor(self, tool):
@@ -52,7 +53,8 @@ class FreshdeskTool(BaseAgentTool):
                     },
                     "type": {
                         "type": "string",
-                        "description": "Ticket type (e.g., 'Question', 'Bug', 'Feature Request')"
+                        "enum": self.ticket_types,
+                        "description": f"Ticket type (must be one of: {', '.join(self.ticket_types)})"
                     },
                     "tags": {
                         "type": "array",
@@ -137,6 +139,20 @@ class FreshdeskTool(BaseAgentTool):
                 if field not in args:
                     raise ValueError(f"Missing required field: {field}")
             
+            # Validate priority value
+            if args["priority"] not in [1, 2, 3, 4]:
+                raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
+            
+            # Validate status if provided
+            if "status" in args:
+                if args["status"] not in [2, 3, 4, 5]:
+                    raise ValueError("Status must be one of: 2 (Open), 3 (Pending), 4 (Resolved), 5 (Closed)")
+            
+            # Validate type if provided
+            if "type" in args:
+                if args["type"] not in self.ticket_types:
+                    raise ValueError(f"Type must be one of: {', '.join(self.ticket_types)}")
+            
             # Format ticket data according to Freshdesk API requirements
             ticket_data = {
                 "subject": args["subject"],
@@ -162,6 +178,7 @@ class FreshdeskTool(BaseAgentTool):
                 "output": {
                     "message": "Ticket created successfully",
                     "ticket_id": result["id"],
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
                     "ticket": result
                 },
                 "sources": [{
@@ -186,22 +203,12 @@ class FreshdeskTool(BaseAgentTool):
                 # Include requester details in the request
                 result = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
                 
-                # Format the response to include requester email
-                formatted_result = {
-                    "id": result["id"],
-                    "subject": result["subject"],
-                    "description": result["description"],
-                    "status": result["status"],
-                    "priority": result["priority"],
-                    "requester_email": result.get("requester", {}).get("email"),
-                    "created_at": result.get("created_at"),
-                    "updated_at": result.get("updated_at")
-                }
-                
                 return {
                     "output": {
                         "message": "Ticket retrieved successfully",
-                        "ticket": formatted_result
+                        "ticket_id": result["id"],
+                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
+                        "ticket": result
                     },
                     "sources": [{
                         "toolCallDescription": f"Retrieved Freshdesk ticket #{args['ticket_id']}",
@@ -220,7 +227,11 @@ class FreshdeskTool(BaseAgentTool):
                 # List all tickets filtered by requester email
                 result = self._make_request("GET", "tickets", params={"email": args["requester_email"]})
                 
-                # Format the response
+                # Add URLs to each ticket
+                for ticket in result:
+                    ticket["url"] = f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+                
+                # Create items for sources
                 items = []
                 for ticket in result:
                     items.append({
@@ -262,6 +273,8 @@ class FreshdeskTool(BaseAgentTool):
                 return {
                     "output": {
                         "message": "Ticket is already closed",
+                        "ticket_id": ticket["id"],
+                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}",
                         "ticket": ticket
                     },
                     "sources": [{
@@ -291,6 +304,8 @@ class FreshdeskTool(BaseAgentTool):
             return {
                 "output": {
                     "message": "Ticket closed successfully",
+                    "ticket_id": result["id"],
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
                     "ticket": result
                 },
                 "sources": [{
@@ -326,6 +341,8 @@ class FreshdeskTool(BaseAgentTool):
                 return {
                     "output": {
                         "message": "Ticket priority is already at the requested level",
+                        "ticket_id": ticket["id"],
+                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}",
                         "ticket": ticket
                     },
                     "sources": [{
@@ -361,6 +378,8 @@ class FreshdeskTool(BaseAgentTool):
             return {
                 "output": {
                     "message": "Ticket priority updated successfully",
+                    "ticket_id": result["id"],
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
                     "ticket": result
                 },
                 "sources": [{
