@@ -54,7 +54,7 @@ class FreshdeskTool(BaseAgentTool):
                     "type": {
                         "type": "string",
                         "enum": self.ticket_types,
-                        "description": f"Ticket type (must be one of: {', '.join(self.ticket_types)})"
+                        "description": f"Ticket type (must be one of: {', '.join(self.ticket_types)}) (required for create_ticket action)"
                     },
                     "tags": {
                         "type": "array",
@@ -72,20 +72,6 @@ class FreshdeskTool(BaseAgentTool):
                         "type": "integer",
                         "enum": [2, 3, 4, 5],
                         "description": "Ticket status (2=Open, 3=Pending, 4=Resolved, 5=Closed)"
-                    },
-                    "cc_emails": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "description": "List of email addresses to CC on the ticket"
-                    },
-                    "related_ticket_ids": {
-                        "type": "array",
-                        "items": {
-                            "type": "integer"
-                        },
-                        "description": "List of related ticket IDs"
                     }
                 },
                 "required": ["action"]
@@ -140,9 +126,10 @@ class FreshdeskTool(BaseAgentTool):
                     raise ValueError(f"Missing required field: {field}")
             
             # Validate priority value
-            if args["priority"] not in [1, 2, 3, 4]:
-                raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
-            
+            if "priority" in args:
+                if args["priority"] not in [1, 2, 3, 4]:
+                    raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
+                
             # Validate status if provided
             if "status" in args:
                 if args["status"] not in [2, 3, 4, 5]:
@@ -164,10 +151,6 @@ class FreshdeskTool(BaseAgentTool):
             }
             
             # Add optional fields if provided
-            if "cc_emails" in args:
-                ticket_data["cc_emails"] = args["cc_emails"]
-            if "related_ticket_ids" in args:
-                ticket_data["related_ticket_ids"] = args["related_ticket_ids"]
             if "type" in args:
                 ticket_data["type"] = args["type"]
             if "tags" in args:
