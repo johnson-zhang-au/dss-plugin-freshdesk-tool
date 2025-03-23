@@ -3,6 +3,7 @@ import requests
 import logging
 import base64
 import json
+import dataiku
 
 class FreshdeskTool(BaseAgentTool):
     def set_config(self, config, plugin_config):
@@ -44,6 +45,21 @@ class FreshdeskTool(BaseAgentTool):
                     "description": {
                         "type": "string",
                         "description": "Ticket description (required for create_ticket action)"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the requester (required for create_ticket action)"
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Ticket type (e.g., 'Question', 'Bug', 'Feature Request')"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "List of tags to apply to the ticket"
                     },
                     "priority": {
                         "type": "integer",
@@ -116,7 +132,7 @@ class FreshdeskTool(BaseAgentTool):
         
         if action == "create_ticket":
             # Validate required fields
-            required_fields = ["subject", "description", "email"]
+            required_fields = ["subject", "description", "requester_email", "name"]
             for field in required_fields:
                 if field not in args:
                     raise ValueError(f"Missing required field: {field}")
@@ -125,7 +141,8 @@ class FreshdeskTool(BaseAgentTool):
             ticket_data = {
                 "subject": args["subject"],
                 "description": args["description"],
-                "email": args["email"],
+                "email": args["requester_email"],
+                "name": args["name"],
                 "priority": args.get("priority", 1),
                 "status": args.get("status", 2)  # Default to Open status
             }
@@ -135,6 +152,10 @@ class FreshdeskTool(BaseAgentTool):
                 ticket_data["cc_emails"] = args["cc_emails"]
             if "related_ticket_ids" in args:
                 ticket_data["related_ticket_ids"] = args["related_ticket_ids"]
+            if "type" in args:
+                ticket_data["type"] = args["type"]
+            if "tags" in args:
+                ticket_data["tags"] = args["tags"]
             
             result = self._make_request("POST", "tickets", ticket_data)
             return {
