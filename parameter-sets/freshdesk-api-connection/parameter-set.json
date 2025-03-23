@@ -1,0 +1,26 @@
+{
+    "meta": {
+        "label": "Freshdesk connection",
+        "description": "Freshdesk Search connection",
+        "icon": "icon-help"
+    },
+    "defaultDefinableInline": true,
+    "defaultDefinableAtProjectLevel": true,
+    "pluginParams": [],
+    "params": [
+        {
+            "name": "freshdesk_domain",
+            "label": "Freshdesk Domain",
+            "type": "STRING",
+            "mandatory": true,
+            "description": "e.g. your-domain.freshdesk.com"
+        },
+        {
+            "name": "apiKey",
+            "label": "API Key",
+            "type": "PASSWORD",
+            "mandatory": true,
+            "description": "API Key for Freshdesk"
+        }
+    ]
+}

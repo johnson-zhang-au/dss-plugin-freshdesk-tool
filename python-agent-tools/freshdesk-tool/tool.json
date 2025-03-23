@@ -1,0 +1,15 @@
+{
+    "id": "create-freshdesk-ticket",
+    "meta": {
+        "icon": "fas fa-headset",
+        "label": "Interact with Freshdesk Tickets"
+    },
+    "params": [
+        {
+            "name": "freshdesk_api_connection",
+            "label": "Freshdesk API Connection",
+            "type": "PRESET",
+            "parameterSetId": "freshdesk-api-connection"
+        }
+    ]
+}
