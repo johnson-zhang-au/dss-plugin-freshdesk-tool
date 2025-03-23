@@ -27,7 +27,8 @@
             "label": "Ticket Types",
             "type": "STRINGS",
             "mandatory": true,
-            "description": "A list of allowed ticket types"
+            "description": "A list of allowed ticket types",
+            "defaultValue": "['Question', 'Feature Request']"
         }
     ]
 }
