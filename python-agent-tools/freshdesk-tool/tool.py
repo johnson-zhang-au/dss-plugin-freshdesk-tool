@@ -183,8 +183,15 @@ class FreshdeskTool(BaseAgentTool):
             if search_by == "id":
                 if "ticket_id" not in args:
                     raise ValueError("Missing required field: ticket_id")
+                if "requester_email" not in args:
+                    raise ValueError("Missing required field: requester_email")
+                    
                 # Include requester details in the request
                 result = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
+                
+                # Verify that the provided email matches the ticket's requester email
+                if result.get("requester", {}).get("email") != args["requester_email"]:
+                    raise ValueError("The provided requester email does not match the ticket's requester email")
                 
                 return {
                     "output": {
