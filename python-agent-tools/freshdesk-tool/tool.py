@@ -3,7 +3,6 @@ import requests
 import logging
 import base64
 import json
-import dataiku
 
 class FreshdeskTool(BaseAgentTool):
     def set_config(self, config, plugin_config):
@@ -112,264 +111,248 @@ class FreshdeskTool(BaseAgentTool):
     def invoke(self, input, trace):
         args = input["input"]
         action = args["action"]
-        
+
         if action == "create_ticket":
-            # Validate required fields
-            required_fields = ["subject", "description", "requester_email", "name"]
-            for field in required_fields:
-                if field not in args:
-                    raise ValueError(f"Missing required field: {field}")
-            
-            # Validate priority value
-            if "priority" in args:
-                if args["priority"] not in [1, 2, 3, 4]:
-                    raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
-                
-            # Validate status if provided
-            if "status" in args:
-                if args["status"] not in [2, 3, 4, 5]:
-                    raise ValueError("Status must be one of: 2 (Open), 3 (Pending), 4 (Resolved), 5 (Closed)")
-            
-            # Validate type if provided
-            if "type" in args:
-                if args["type"] not in self.ticket_types:
-                    raise ValueError(f"Type must be one of: {', '.join(self.ticket_types)}")
-            
-            # Format ticket data according to Freshdesk API requirements
-            ticket_data = {
-                "subject": args["subject"],
-                "description": args["description"],
-                "email": args["requester_email"],
-                "name": args["name"],
-                "priority": args.get("priority", 1),
-                "status": args.get("status", 2)  # Default to Open status
-            }
-            
-            # Add optional fields if provided
-            if "type" in args:
-                ticket_data["type"] = args["type"]
-            if "tags" in args:
-                ticket_data["tags"] = args["tags"]
-            
-            result = self._make_request("POST", "tickets", ticket_data)
-            return {
-                "output": {
-                    "message": "Ticket created successfully",
-                    "ticket_id": result["id"],
-                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
-                    "ticket": result
-                },
-                "sources": [{
-                    "toolCallDescription": f"Created Freshdesk ticket with subject: {args['subject']}",
-                    "items": [{
-                        "type": "SIMPLE_DOCUMENT",
-                        "title": f"Ticket #{result['id']}",
-                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
-                    }]
-                }]
-            }
-            
+            return self._create_ticket(args)
         elif action == "get_ticket_by_id":
-            # Validate required fields
-            required_fields = ["ticket_id", "requester_email"]
-            for field in required_fields:
-                if field not in args:
-                    raise ValueError(f"Missing required field: {field}")
-                    
-            # Include requester details in the request
-            result = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
-            
-            # Verify that the provided email matches the ticket's requester email
-            if result.get("requester", {}).get("email") != args["requester_email"]:
-                raise ValueError("The provided requester email does not match the ticket's requester email")
-            
-            return {
-                "output": {
-                    "message": "Ticket retrieved successfully",
-                    "ticket_id": result["id"],
-                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
-                    "ticket": result
-                },
-                "sources": [{
-                    "toolCallDescription": f"Retrieved Freshdesk ticket #{args['ticket_id']}",
-                    "items": [{
-                        "type": "SIMPLE_DOCUMENT",
-                        "title": f"Ticket #{result['id']}",
-                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
-                    }]
-                }]
-            }
-            
+            return self._get_ticket_by_id(args)
         elif action == "get_tickets_by_email":
-            # Validate required fields
-            required_fields = ["requester_email"]
-            if "requester_email" not in args:
-                raise ValueError("Missing required field: requester_email")
-                
-            # List all tickets filtered by requester email
-            result = self._make_request("GET", "tickets", params={"email": args["requester_email"]})
-            
-            # Add URLs to each ticket
-            for ticket in result:
-                ticket["url"] = f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
-            
-            # Create items for sources
-            items = []
-            for ticket in result:
-                items.append({
-                    "type": "SIMPLE_DOCUMENT",
-                    "title": f"Ticket #{ticket['id']}",
-                    "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
-                })
-            
-            return {
-                "output": {
-                    "message": f"Found {len(result)} tickets for requester {args['requester_email']}",
-                    "tickets": result
-                },
-                "sources": [{
-                    "toolCallDescription": f"Retrieved Freshdesk tickets for requester: {args['requester_email']}",
-                    "items": items
-                }]
-            }
-            
+            return self._get_tickets_by_email(args)
         elif action == "close_ticket":
-            # Validate required fields
-            required_fields = ["ticket_id", "requester_email"]
-            for field in required_fields:
-                if field not in args:
-                    raise ValueError(f"Missing required field: {field}")
-            
-            # First, get the ticket to verify the requester email
-            ticket = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
-            
-            # Verify that the provided email matches the ticket's requester email
-            if ticket.get("requester", {}).get("email") != args["requester_email"]:
-                raise ValueError("The provided requester email does not match the ticket's requester email")
-            
-            # Check if ticket is already closed
-            if ticket.get("status") == 5:  # 5 = Closed
-                return {
-                    "output": {
-                        "message": "Ticket is already closed",
-                        "ticket_id": ticket["id"],
-                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}",
-                        "ticket": ticket
-                    },
-                    "sources": [{
-                        "toolCallDescription": f"Checked status of Freshdesk ticket #{args['ticket_id']}",
-                        "items": [{
-                            "type": "SIMPLE_DOCUMENT",
-                            "title": f"Ticket #{ticket['id']}",
-                            "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
-                        }]
-                    }]
-                }
-            
-            # Update the ticket status to closed (5)
-            update_data = {
-                "status": 5  # 5 = Closed
-            }
-            
-            result = self._make_request("PUT", f"tickets/{args['ticket_id']}", update_data)
-            
-            # Add a note to the ticket
-            note_data = {
-                "body": f"Ticket closed as requested by the original requester ({args['requester_email']})",
-                "private": False  # Make the note visible to the requester
-            }
-            self._make_request("POST", f"tickets/{args['ticket_id']}/notes", note_data)
-            
-            return {
-                "output": {
-                    "message": "Ticket closed successfully",
-                    "ticket_id": result["id"],
-                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
-                    "ticket": result
-                },
-                "sources": [{
-                    "toolCallDescription": f"Closed Freshdesk ticket #{args['ticket_id']}",
-                    "items": [{
-                        "type": "SIMPLE_DOCUMENT",
-                        "title": f"Ticket #{result['id']}",
-                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
-                    }]
-                }]
-            }
-            
+            return self._close_ticket(args)
         elif action == "update_ticket_priority":
-            # Validate required fields
-            required_fields = ["ticket_id", "requester_email", "priority"]
-            for field in required_fields:
-                if field not in args:
-                    raise ValueError(f"Missing required field: {field}")
-            
-            # Validate priority value
-            if args["priority"] not in [1, 2, 3, 4]:
-                raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
-            
-            # First, get the ticket to verify the requester email
-            ticket = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
-            
-            # Verify that the provided email matches the ticket's requester email
-            if ticket.get("requester", {}).get("email") != args["requester_email"]:
-                raise ValueError("The provided requester email does not match the ticket's requester email")
-            
-            # Check if priority is already at the requested level
-            if ticket.get("priority") == args["priority"]:
-                return {
-                    "output": {
-                        "message": "Ticket priority is already at the requested level",
-                        "ticket_id": ticket["id"],
-                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}",
-                        "ticket": ticket
-                    },
-                    "sources": [{
-                        "toolCallDescription": f"Checked priority of Freshdesk ticket #{args['ticket_id']}",
-                        "items": [{
-                            "type": "SIMPLE_DOCUMENT",
-                            "title": f"Ticket #{ticket['id']}",
-                            "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
-                        }]
-                    }]
-                }
-            
-            # Update the ticket priority
-            update_data = {
-                "priority": args["priority"]
-            }
-            
-            result = self._make_request("PUT", f"tickets/{args['ticket_id']}", update_data)
-            
-            # Add a note to the ticket
-            priority_levels = {
-                1: "Low",
-                2: "Medium",
-                3: "High",
-                4: "Urgent"
-            }
-            note_data = {
-                "body": f"Ticket priority updated to {priority_levels[args['priority']]} as requested by the original requester ({args['requester_email']})",
-                "private": False  # Make the note visible to the requester
-            }
-            self._make_request("POST", f"tickets/{args['ticket_id']}/notes", note_data)
-            
-            return {
-                "output": {
-                    "message": "Ticket priority updated successfully",
-                    "ticket_id": result["id"],
-                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
-                    "ticket": result
-                },
-                "sources": [{
-                    "toolCallDescription": f"Updated priority of Freshdesk ticket #{args['ticket_id']} to {args['priority']}",
-                    "items": [{
-                        "type": "SIMPLE_DOCUMENT",
-                        "title": f"Ticket #{result['id']}",
-                        "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
-                    }]
-                }]
-            }
-            
+            return self._update_ticket_priority(args)
         else:
             raise ValueError(f"Invalid action: {action}")
+
+    def _create_ticket(self, args):
+        # Validate required fields
+        required_fields = ["subject", "description", "requester_email", "name"]
+        for field in required_fields:
+            if field not in args:
+                raise ValueError(f"Missing required field: {field}")
+
+        # Validate priority value
+        if "priority" in args and args["priority"] not in [1, 2, 3, 4]:
+            raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
+
+        # Validate status if provided
+        if "status" in args and args["status"] not in [2, 3, 4, 5]:
+            raise ValueError("Status must be one of: 2 (Open), 3 (Pending), 4 (Resolved), 5 (Closed)")
+
+        # Validate type if provided
+        if "type" in args and args["type"] not in self.ticket_types:
+            raise ValueError(f"Type must be one of: {', '.join(self.ticket_types)}")
+
+        # Format ticket data
+        ticket_data = {
+            "subject": args["subject"],
+            "description": args["description"],
+            "email": args["requester_email"],
+            "name": args["name"],
+            "priority": args.get("priority", 1),
+            "status": args.get("status", 2)
+        }
+        if "type" in args:
+            ticket_data["type"] = args["type"]
+        if "tags" in args:
+            ticket_data["tags"] = args["tags"]
+
+        result = self._make_request("POST", "tickets", ticket_data)
+        return {
+            "output": {
+                "message": "Ticket created successfully",
+                "ticket_id": result["id"],
+                "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
+                "ticket": result
+            },
+            "sources": [{
+                "toolCallDescription": f"Created Freshdesk ticket with subject: {args['subject']}",
+                "items": [{
+                    "type": "SIMPLE_DOCUMENT",
+                    "title": f"Ticket #{result['id']}",
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
+                }]
+            }]
+        }
+
+    def _get_ticket_by_id(self, args):
+        required_fields = ["ticket_id", "requester_email"]
+        for field in required_fields:
+            if field not in args:
+                raise ValueError(f"Missing required field: {field}")
+                    
+        result = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
+        
+        if result.get("requester", {}).get("email") != args["requester_email"]:
+            raise ValueError("The provided requester email does not match the ticket's requester email")
+        
+        return {
+            "output": {
+                "message": "Ticket retrieved successfully",
+                "ticket_id": result["id"],
+                "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
+                "ticket": result
+            },
+            "sources": [{
+                "toolCallDescription": f"Retrieved Freshdesk ticket #{args['ticket_id']}",
+                "items": [{
+                    "type": "SIMPLE_DOCUMENT",
+                    "title": f"Ticket #{result['id']}",
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
+                }]
+            }]
+        }
+
+    def _get_tickets_by_email(self, args):
+        if "requester_email" not in args:
+            raise ValueError("Missing required field: requester_email")
+                
+        result = self._make_request("GET", "tickets", params={"email": args["requester_email"]})
+        
+        for ticket in result:
+            ticket["url"] = f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+        
+        items = []
+        for ticket in result:
+            items.append({
+                "type": "SIMPLE_DOCUMENT",
+                "title": f"Ticket #{ticket['id']}",
+                "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+            })
+        
+        return {
+            "output": {
+                "message": f"Found {len(result)} tickets for requester {args['requester_email']}",
+                "tickets": result
+            },
+            "sources": [{
+                "toolCallDescription": f"Retrieved Freshdesk tickets for requester: {args['requester_email']}",
+                "items": items
+            }]
+        }
+
+    def _close_ticket(self, args):
+        required_fields = ["ticket_id", "requester_email"]
+        for field in required_fields:
+            if field not in args:
+                raise ValueError(f"Missing required field: {field}")
+        
+        ticket = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
+        
+        if ticket.get("requester", {}).get("email") != args["requester_email"]:
+            raise ValueError("The provided requester email does not match the ticket's requester email")
+        
+        if ticket.get("status") == 5:
+            return {
+                "output": {
+                    "message": "Ticket is already closed",
+                    "ticket_id": ticket["id"],
+                    "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}",
+                    "ticket": ticket
+                },
+                "sources": [{
+                    "toolCallDescription": f"Checked status of Freshdesk ticket #{args['ticket_id']}",
+                    "items": [{
+                        "type": "SIMPLE_DOCUMENT",
+                        "title": f"Ticket #{ticket['id']}",
+                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+                    }]
+                }]
+            }
+        
+        update_data = {
+            "status": 5
+        }
+        
+        result = self._make_request("PUT", f"tickets/{args['ticket_id']}", update_data)
+        
+        note_data = {
+            "body": f"Ticket closed as requested by the original requester ({args['requester_email']})",
+            "private": False
+        }
+        self._make_request("POST", f"tickets/{args['ticket_id']}/notes", note_data)
+        
+        return {
+            "output": {
+                "message": "Ticket closed successfully",
+                "ticket_id": result["id"],
+                "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
+                "ticket": result
+            },
+            "sources": [{
+                "toolCallDescription": f"Closed Freshdesk ticket #{args['ticket_id']}",
+                "items": [{
+                    "type": "SIMPLE_DOCUMENT",
+                    "title": f"Ticket #{result['id']}",
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
+                }]
+            }]
+        }
+
+    def _update_ticket_priority(self, args):
+        required_fields = ["ticket_id", "requester_email", "priority"]
+        for field in required_fields:
+            if field not in args:
+                raise ValueError(f"Missing required field: {field}")
+        
+        if args["priority"] not in [1, 2, 3, 4]:
+            raise ValueError("Priority must be one of: 1 (Low), 2 (Medium), 3 (High), 4 (Urgent)")
+        
+        ticket = self._make_request("GET", f"tickets/{args['ticket_id']}", params={"include": "requester"})
+        
+        if ticket.get("requester", {}).get("email") != args["requester_email"]:
+            raise ValueError("The provided requester email does not match the ticket's requester email")
+        
+        if ticket.get("priority") == args["priority"]:
+            return {
+                "output": {
+                    "message": "Ticket priority is already at the requested level",
+                    "ticket_id": ticket["id"],
+                    "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}",
+                    "ticket": ticket
+                },
+                "sources": [{
+                    "toolCallDescription": f"Checked priority of Freshdesk ticket #{args['ticket_id']}",
+                    "items": [{
+                        "type": "SIMPLE_DOCUMENT",
+                        "title": f"Ticket #{ticket['id']}",
+                        "url": f"https://{self.domain}/helpdesk/tickets/{ticket['id']}"
+                    }]
+                }]
+            }
+        
+        update_data = {
+            "priority": args["priority"]
+        }
+        
+        result = self._make_request("PUT", f"tickets/{args['ticket_id']}", update_data)
+        
+        priority_levels = {
+            1: "Low",
+            2: "Medium",
+            3: "High",
+            4: "Urgent"
+        }
+        note_data = {
+            "body": f"Ticket priority updated to {priority_levels[args['priority']]} as requested by the original requester ({args['requester_email']})",
+            "private": False
+        }
+        self._make_request("POST", f"tickets/{args['ticket_id']}/notes", note_data)
+        
+        return {
+            "output": {
+                "message": "Ticket priority updated successfully",
+                "ticket_id": result["id"],
+                "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}",
+                "ticket": result
+            },
+            "sources": [{
+                "toolCallDescription": f"Updated priority of Freshdesk ticket #{args['ticket_id']} to {args['priority']}",
+                "items": [{
+                    "type": "SIMPLE_DOCUMENT",
+                    "title": f"Ticket #{result['id']}",
+                    "url": f"https://{self.domain}/helpdesk/tickets/{result['id']}"
+                }]
+            }]
+        }
